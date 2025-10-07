@@ -14,7 +14,7 @@ import json
 
 logger = logging.getLogger(__name__)
 
-# Backend API base URL - Read from Streamlit secrets or environment
+# Backend API base URL - Read from Streamlit secrets or environment (LAZY)
 def get_api_base_url():
     """Get API base URL from Streamlit secrets or environment"""
     try:
@@ -24,12 +24,14 @@ def get_api_base_url():
         # Fall back to environment variable (for local development)
         return os.getenv("API_BASE_URL", "https://risk-analysis-api.onrender.com")
 
-API_BASE_URL = get_api_base_url()
+# Don't call it here! Make it lazy
+# API_BASE_URL = get_api_base_url()  # ❌ DON'T DO THIS
 
 class APIClient:
     """Client for interacting with risk analysis backend"""
     
     def __init__(self, base_url: str = None):
+        # Call get_api_base_url() only when creating client instance
         self.base_url = (base_url or get_api_base_url()).rstrip('/')
         self.default_timeout = 30
     
