@@ -5,10 +5,19 @@ Button-based interaction with contextual insights
 """
 
 import streamlit as st
-from utils.api_client import get_api_client
-from utils.portfolio_manager import get_portfolio  # ADDED
-from utils.agent import process_query
 import time
+
+# Lazy imports - load these inside functions after Streamlit is ready
+def get_utils():
+    from utils.api_client import get_api_client
+    from utils.portfolio_manager import get_portfolio
+    from utils.agent import process_query
+    
+    return {
+        'get_api_client': get_api_client,
+        'get_portfolio': get_portfolio,
+        'process_query': process_query
+    }
 
 st.set_page_config(
     page_title="Co-pilot",
@@ -16,6 +25,13 @@ st.set_page_config(
     layout="centered",
     initial_sidebar_state="collapsed"
 )
+
+# Load utils after Streamlit is ready and unpack them
+utils = get_utils()
+
+get_api_client = utils['get_api_client']
+get_portfolio = utils['get_portfolio']
+process_query = utils['process_query']
 
 # iOS-inspired CSS
 st.markdown("""

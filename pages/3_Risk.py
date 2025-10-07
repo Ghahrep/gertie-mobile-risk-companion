@@ -5,28 +5,52 @@ Single-scroll feed with visual hierarchy: Worst case → Scenarios → Key metri
 NOW WITH INTERACTIVE SCENARIO CARDS!
 """
 
+# pages/3_Risk.py
+"""
+Risk Analysis Screen - iOS Reimagined
+Single-scroll feed with visual hierarchy: Worst case → Scenarios → Key metrics → Actions
+NOW WITH INTERACTIVE SCENARIO CARDS!
+"""
+
 import streamlit as st
 import plotly.graph_objects as go
-from utils.api_client import get_api_client
-from utils.portfolio_manager import get_portfolio, set_portfolio
-from utils.hedge_preview import show_hedge_preview_dialog, activate_hedge_preview, is_hedge_confirmed
 import numpy as np
 import time
 
-from utils.tooltips import (
-    show_metric_with_tooltip,
-    show_learn_more_section,
-    show_contextual_tip,
-    tooltip_icon
-)
-
-# NEW: Import scenario modal functions
-from utils.scenario_modal import (
-    show_scenario_modal,
-    activate_scenario_modal,
-    is_scenario_modal_active,
-    get_active_scenario
-)
+# Lazy imports - load these inside functions after Streamlit is ready
+def get_utils():
+    from utils.api_client import get_api_client
+    from utils.portfolio_manager import get_portfolio, set_portfolio
+    from utils.hedge_preview import show_hedge_preview_dialog, activate_hedge_preview, is_hedge_confirmed
+    from utils.tooltips import (
+        show_metric_with_tooltip,
+        show_learn_more_section,
+        show_contextual_tip,
+        tooltip_icon
+    )
+    from utils.scenario_modal import (
+        show_scenario_modal,
+        activate_scenario_modal,
+        is_scenario_modal_active,
+        get_active_scenario
+    )
+    
+    return {
+        'get_api_client': get_api_client,
+        'get_portfolio': get_portfolio,
+        'set_portfolio': set_portfolio,
+        'show_hedge_preview_dialog': show_hedge_preview_dialog,
+        'activate_hedge_preview': activate_hedge_preview,
+        'is_hedge_confirmed': is_hedge_confirmed,
+        'show_metric_with_tooltip': show_metric_with_tooltip,
+        'show_learn_more_section': show_learn_more_section,
+        'show_contextual_tip': show_contextual_tip,
+        'tooltip_icon': tooltip_icon,
+        'show_scenario_modal': show_scenario_modal,
+        'activate_scenario_modal': activate_scenario_modal,
+        'is_scenario_modal_active': is_scenario_modal_active,
+        'get_active_scenario': get_active_scenario
+    }
 
 st.set_page_config(
     page_title="Risk Analysis",
@@ -34,6 +58,27 @@ st.set_page_config(
     layout="centered",
     initial_sidebar_state="collapsed"
 )
+
+# Load utils after Streamlit is ready and unpack them
+utils = get_utils()
+
+# Unpack all utilities
+get_api_client = utils['get_api_client']
+get_portfolio = utils['get_portfolio']
+set_portfolio = utils['set_portfolio']
+show_hedge_preview_dialog = utils['show_hedge_preview_dialog']
+activate_hedge_preview = utils['activate_hedge_preview']
+is_hedge_confirmed = utils['is_hedge_confirmed']
+show_metric_with_tooltip = utils['show_metric_with_tooltip']
+show_learn_more_section = utils['show_learn_more_section']
+show_contextual_tip = utils['show_contextual_tip']
+tooltip_icon = utils['tooltip_icon']
+show_scenario_modal = utils['show_scenario_modal']
+activate_scenario_modal = utils['activate_scenario_modal']
+is_scenario_modal_active = utils['is_scenario_modal_active']
+get_active_scenario = utils['get_active_scenario']
+
+# Rest of your code continues as normal...
 
 # Enhanced iOS-style CSS
 st.markdown("""

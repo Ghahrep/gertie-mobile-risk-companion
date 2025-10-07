@@ -6,26 +6,50 @@ Add, remove, and adjust portfolio allocations with real-time feedback
 
 import streamlit as st
 import plotly.graph_objects as go
-from utils.portfolio_manager import (
-    get_portfolio, 
-    set_portfolio, 
-    add_to_portfolio, 
-    remove_from_portfolio,
-    update_weight,
-    initialize_portfolio
-)
-from utils.portfolio_value import (
-    get_portfolio_stats,
-    format_currency,
-    format_percent,
-    initialize_portfolio_investment
-)
-from utils.api_client import get_api_client
-from utils.refresh_button import show_refresh_button, show_last_update_time
-from utils.tooltips import show_metric_with_tooltip, tooltip_icon
-from utils.loading_skeletons import show_chart_skeleton, show_metric_skeleton
-from utils.performance_chart import show_performance_section
 import time
+
+# Lazy imports - load these inside functions after Streamlit is ready
+def get_utils():
+    from utils.portfolio_manager import (
+        get_portfolio, 
+        set_portfolio, 
+        add_to_portfolio, 
+        remove_from_portfolio,
+        update_weight,
+        initialize_portfolio
+    )
+    from utils.portfolio_value import (
+        get_portfolio_stats,
+        format_currency,
+        format_percent,
+        initialize_portfolio_investment
+    )
+    from utils.api_client import get_api_client
+    from utils.refresh_button import show_refresh_button, show_last_update_time
+    from utils.tooltips import show_metric_with_tooltip, tooltip_icon
+    from utils.loading_skeletons import show_chart_skeleton, show_metric_skeleton
+    from utils.performance_chart import show_performance_section
+    
+    return {
+        'get_portfolio': get_portfolio,
+        'set_portfolio': set_portfolio,
+        'add_to_portfolio': add_to_portfolio,
+        'remove_from_portfolio': remove_from_portfolio,
+        'update_weight': update_weight,
+        'initialize_portfolio': initialize_portfolio,
+        'get_portfolio_stats': get_portfolio_stats,
+        'format_currency': format_currency,
+        'format_percent': format_percent,
+        'initialize_portfolio_investment': initialize_portfolio_investment,
+        'get_api_client': get_api_client,
+        'show_refresh_button': show_refresh_button,
+        'show_last_update_time': show_last_update_time,
+        'show_metric_with_tooltip': show_metric_with_tooltip,
+        'tooltip_icon': tooltip_icon,
+        'show_chart_skeleton': show_chart_skeleton,
+        'show_metric_skeleton': show_metric_skeleton,
+        'show_performance_section': show_performance_section
+    }
 
 st.set_page_config(
     page_title="Portfolio Editor",
@@ -35,8 +59,9 @@ st.set_page_config(
 )
 
 # Initialize
+utils = get_utils()
+initialize_portfolio = utils['initialize_portfolio']
 initialize_portfolio()
-initialize_portfolio_investment()
 
 # Custom CSS
 st.markdown("""
