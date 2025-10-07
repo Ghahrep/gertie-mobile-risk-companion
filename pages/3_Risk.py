@@ -2,13 +2,31 @@
 """
 Risk Analysis Screen - iOS Reimagined
 Single-scroll feed with visual hierarchy: Worst case → Scenarios → Key metrics → Actions
+NOW WITH INTERACTIVE SCENARIO CARDS!
 """
 
 import streamlit as st
 import plotly.graph_objects as go
 from utils.api_client import get_api_client
+from utils.portfolio_manager import get_portfolio, set_portfolio
+from utils.hedge_preview import show_hedge_preview_dialog, activate_hedge_preview, is_hedge_confirmed
 import numpy as np
 import time
+
+from utils.tooltips import (
+    show_metric_with_tooltip,
+    show_learn_more_section,
+    show_contextual_tip,
+    tooltip_icon
+)
+
+# NEW: Import scenario modal functions
+from utils.scenario_modal import (
+    show_scenario_modal,
+    activate_scenario_modal,
+    is_scenario_modal_active,
+    get_active_scenario
+)
 
 st.set_page_config(
     page_title="Risk Analysis",
@@ -187,13 +205,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Get portfolio from session state
-if 'portfolio' in st.session_state:
-    symbols = st.session_state.portfolio.get('symbols', [])
-    weights = st.session_state.portfolio.get('weights', [])
-else:
-    symbols = []
-    weights = []
+# Get portfolio from session state using portfolio_manager
+symbols, weights = get_portfolio()
 
 if not symbols:
     st.warning("📊 No portfolio loaded")
@@ -217,9 +230,13 @@ with st.spinner("Analyzing portfolio risk..."):
     try:
         client = get_api_client()
         
-        # Get both stress test and risk metrics in parallel (conceptually)
-        stress_response = client.run_stress_test(symbols, weights)
-        risk_response = client.get_risk_analysis(symbols, weights)
+        # Convert to tuples for caching
+        symbols_tuple = tuple(symbols)
+        weights_tuple = tuple(weights)
+        
+        # Get both stress test and risk metrics (CACHED!)
+        stress_response = client.run_stress_test(symbols_tuple, weights_tuple)
+        risk_response = client.get_risk_analysis(symbols_tuple, weights_tuple)
         
         # Parse stress test data
         if stress_response.get('status') == 'success':
@@ -288,16 +305,38 @@ with st.spinner("Analyzing portfolio risk..."):
         st.error(f"Unable to load risk data: {str(e)}")
         data_loaded = False
 
+# NEW: Check if a scenario modal is active - SHOW MODAL INSTEAD OF PAGE
+if is_scenario_modal_active():
+    selected_scenario = get_active_scenario()
+    
+    # Back navigation
+    st.markdown("""
+    <div style="margin-bottom: 1rem;">
+        <span style="color: #6b7280; font-size: 0.875rem;">← Back to Risk Analysis</span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Add a proper back button
+    if st.button("← Back to Risk Analysis", use_container_width=True):
+        st.session_state.pop('selected_scenario', None)
+        st.rerun()
+    
+    # Show the detailed scenario modal
+    show_scenario_modal(selected_scenario, symbols, weights)
+    
+    # Stop here - don't show the rest of the page
+    st.stop()
+
 # Only show content if data loaded
 if data_loaded:
     
-    # 1. HERO CARD - Worst Case Scenario (replaces header)
+    # 1. HERO CARD - Worst Case Scenario WITH TOOLTIPS
     resilience_class = (
         "resilience-strong" if resilience >= 70 
         else "resilience-moderate" if resilience >= 40 
         else "resilience-weak"
     )
-    
+
     st.markdown(f"""
     <div class="risk-hero">
         <div class="hero-label">Worst Case Scenario</div>
@@ -312,9 +351,26 @@ if data_loaded:
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # Tooltips for worst case and resilience
+    col1, col2 = st.columns(2)
+
+    with col1:
+        with st.expander("ℹ️ What is Worst Case Scenario?"):
+            st.markdown(tooltip_icon("worst_case", inline=False))
+
+    with col2:
+        with st.expander("ℹ️ What is Portfolio Resilience?"):
+            st.markdown(tooltip_icon("resilience", inline=False))
     
-    # 2. STRESS SCENARIOS - Horizontal Scroll
+    # 2. STRESS SCENARIOS - NOW INTERACTIVE! 🎉
     st.markdown('<div class="section-header">All Stress Scenarios</div>', unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div style="color: #6b7280; font-size: 0.875rem; margin-bottom: 0.75rem;">
+        👆 Tap any scenario to see detailed historical analysis
+    </div>
+    """, unsafe_allow_html=True)
     
     # Map scenarios to emojis and colors
     scenario_icons = {
@@ -328,85 +384,169 @@ if data_loaded:
         'Oil Shock': ('🛢️', '#f87171')
     }
     
-    # Create columns for horizontal scroll effect
+    # Create clickable cards - Top 4 scenarios
     cols = st.columns(min(len(scenario_data), 4))
     
-    for idx, scenario in enumerate(scenario_data[:4]):  # Show top 4 scenarios
+    for idx, scenario in enumerate(scenario_data[:4]):
         icon, color = scenario_icons.get(scenario['name'], ('📊', '#6b7280'))
         
         with cols[idx]:
             st.markdown(f"""
-            <div class="scenario-card" style="--border-color: {color}; --text-color: {color};">
-                <div class="scenario-icon">{icon}</div>
-                <div class="scenario-loss">-{scenario['loss']:.0f}%</div>
-                <div class="scenario-name">{scenario['name']}</div>
+            <div style="background: white; border-radius: 16px; padding: 1.25rem; min-width: 140px;
+                        text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+                        border-top: 3px solid {color}; margin-bottom: 0.5rem;">
+                <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">{icon}</div>
+                <div style="font-size: 2rem; font-weight: bold; margin-bottom: 0.25rem; color: {color};">
+                    -{scenario['loss']:.0f}%
+                </div>
+                <div style="font-size: 0.75rem; color: #6b7280; font-weight: 500;">
+                    {scenario['name']}
+                </div>
             </div>
             """, unsafe_allow_html=True)
+            
+            # Clickable button below each card
+            if st.button("View Details", key=f"scenario_card_{scenario['name']}", use_container_width=True):
+                activate_scenario_modal(scenario['name'])
+                st.rerun()
     
-    # 3. KEY RISK METRICS - 2x2 Grid
+    # Show all scenarios in expandable section
+    with st.expander(f"📊 View All {len(scenario_data)} Scenarios"):
+        # Create a grid of all scenarios
+        for i in range(0, len(scenario_data), 2):
+            col1, col2 = st.columns(2)
+            
+            # First scenario in row
+            with col1:
+                if i < len(scenario_data):
+                    scenario = scenario_data[i]
+                    icon, color = scenario_icons.get(scenario['name'], ('📊', '#6b7280'))
+                    
+                    st.markdown(f"""
+                    <div style="background: white; border-radius: 12px; padding: 1rem; 
+                                border-left: 4px solid {color}; margin-bottom: 0.5rem;">
+                        <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">{icon}</div>
+                        <div style="font-size: 1.5rem; font-weight: bold; color: {color};">
+                            -{scenario['loss']:.1f}%
+                        </div>
+                        <div style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">
+                            {scenario['name']}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if st.button("View Details", key=f"detail_{i}", use_container_width=True):
+                        activate_scenario_modal(scenario['name'])
+                        st.rerun()
+            
+            # Second scenario in row
+            with col2:
+                if i + 1 < len(scenario_data):
+                    scenario = scenario_data[i + 1]
+                    icon, color = scenario_icons.get(scenario['name'], ('📊', '#6b7280'))
+                    
+                    st.markdown(f"""
+                    <div style="background: white; border-radius: 12px; padding: 1rem; 
+                                border-left: 4px solid {color}; margin-bottom: 0.5rem;">
+                        <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">{icon}</div>
+                        <div style="font-size: 1.5rem; font-weight: bold; color: {color};">
+                            -{scenario['loss']:.1f}%
+                        </div>
+                        <div style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">
+                            {scenario['name']}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if st.button("View Details", key=f"detail_{i+1}", use_container_width=True):
+                        activate_scenario_modal(scenario['name'])
+                        st.rerun()
+    
+    # 3. KEY RISK METRICS - 2x2 Grid WITH TOOLTIPS
     st.markdown('<div class="section-header">Key Risk Metrics</div>', unsafe_allow_html=True)
-    
+
+    # Row 1
     col1, col2 = st.columns(2)
-    
+
     with col1:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-label">Volatility</div>
-            <div class="metric-value">{current_vol:.1f}%</div>
-            <div class="metric-subtitle">Annual</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
+        # Volatility with tooltip
+        show_metric_with_tooltip(
+            label="Volatility",
+            value=f"{current_vol:.1f}%",
+            metric_key="volatility"
+        )
+        st.caption("Annual")
+
     with col2:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-label">VaR (95%)</div>
-            <div class="metric-value">{var_95:.1f}%</div>
-            <div class="metric-subtitle">Daily max loss</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
+        # VaR with tooltip
+        show_metric_with_tooltip(
+            label="VaR (95%)",
+            value=f"{var_95:.1f}%",
+            metric_key="var"
+        )
+        st.caption("Daily max loss")
+
+    # Row 2
     col3, col4 = st.columns(2)
-    
+
     with col3:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-label">Tail Risk</div>
-            <div class="metric-value">{cvar_95:.1f}%</div>
-            <div class="metric-subtitle">CVaR (95%)</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
+        # CVaR with tooltip
+        show_metric_with_tooltip(
+            label="Tail Risk",
+            value=f"{cvar_95:.1f}%",
+            metric_key="cvar"
+        )
+        st.caption("CVaR (95%)")
+
     with col4:
+        # Sharpe with tooltip
         sharpe_color = "#10b981" if sharpe > 1 else "#f59e0b" if sharpe > 0.5 else "#ef4444"
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-label">Sharpe Ratio</div>
-            <div class="metric-value" style="color: {sharpe_color};">{sharpe:.2f}</div>
-            <div class="metric-subtitle">Risk-adjusted</div>
-        </div>
-        """, unsafe_allow_html=True)
+        show_metric_with_tooltip(
+            label="Sharpe Ratio",
+            value=f"{sharpe:.2f}",
+            metric_key="sharpe_ratio"
+        )
+        st.caption("Risk-adjusted")
+
+    # Add "Learn More" section for all metrics
+    with st.expander("📚 Understanding These Metrics"):
+        tab1, tab2, tab3, tab4 = st.tabs(["Volatility", "VaR", "CVaR/Tail Risk", "Sharpe Ratio"])
+        
+        with tab1:
+            st.markdown(tooltip_icon("volatility", inline=False))
+        
+        with tab2:
+            st.markdown(tooltip_icon("var", inline=False))
+        
+        with tab3:
+            st.markdown(tooltip_icon("cvar", inline=False))
+        
+        with tab4:
+            st.markdown(tooltip_icon("sharpe_ratio", inline=False))
     
     # 4. INTERPRETATION - What This Means
     st.markdown('<div class="section-header">What This Means</div>', unsafe_allow_html=True)
-    
+
     # Generate contextual insight
     if worst_case > 30:
         insight_icon = "⚠️"
         insight_title = "High Risk Detected"
         insight_text = f"Your portfolio shows significant vulnerability to major market downturns. In a severe crisis like {worst_name}, you could lose over {worst_case:.0f}% of your value. Consider adding defensive assets like bonds or gold to reduce downside risk."
         border_color = "#ef4444"
+        tip_scenario = "high_risk"
     elif worst_case > 20:
         insight_icon = "⚡"
         insight_title = "Moderate Risk Level"
         insight_text = f"Your portfolio has moderate exposure to market crashes. A {worst_name}-style event could result in a {worst_case:.0f}% loss. Review your hedging strategy to protect against downside scenarios."
         border_color = "#f97316"
+        tip_scenario = "high_volatility"
     else:
         insight_icon = "✓"
         insight_title = "Well-Protected Portfolio"
         insight_text = f"Your portfolio shows good resilience. Even in a {worst_name} scenario, losses would be limited to {worst_case:.0f}%. Continue monitoring risk levels and maintain diversification."
         border_color = "#10b981"
-    
+        tip_scenario = "good_portfolio"
+
     st.markdown(f"""
     <div class="insight-box" style="border-left-color: {border_color};">
         <div class="insight-title">
@@ -416,6 +556,9 @@ if data_loaded:
         <div class="insight-text">{insight_text}</div>
     </div>
     """, unsafe_allow_html=True)
+
+    # Show contextual tip based on risk level
+    show_contextual_tip(tip_scenario)
     
     # 5. RECOMMENDED ACTIONS
     st.markdown('<div class="section-header">Recommended Actions</div>', unsafe_allow_html=True)
@@ -424,7 +567,7 @@ if data_loaded:
         st.session_state['action'] = 'optimization'
         st.switch_page("pages/4_Copilot.py")
     
-    # 6. HEDGING SECTION (INTEGRATED)
+    # 6. HEDGING SECTION (INTEGRATED WITH PREVIEW)
     st.markdown("---")
     st.markdown('<div class="section-header">🛡️ Protect Your Portfolio</div>', unsafe_allow_html=True)
     
@@ -459,48 +602,66 @@ if data_loaded:
         }
     ]
     
+    # Check if any hedge preview is active
+    active_preview = None
     for hedge in quick_hedges:
-        col1, col2 = st.columns([5, 1])
+        if st.session_state.get(f"hedge_preview_{hedge['symbol']}_active", False):
+            active_preview = hedge
+            break
+    
+    if active_preview:
+        # Show the preview dialog
+        showing, confirmed = show_hedge_preview_dialog(
+            hedge_symbol=active_preview['symbol'],
+            hedge_name=active_preview['name'],
+            hedge_description=active_preview['description'],
+            current_symbols=symbols,
+            current_weights=weights,
+            hedge_weight=0.10
+        )
         
-        with col1:
-            st.markdown(f"""
-            <div style="background: white; border-radius: 12px; padding: 1rem; margin: 0.5rem 0; 
-                        box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-left: 4px solid {hedge['color']};">
-                <div style="font-weight: 600; color: #111827; margin-bottom: 0.25rem;">
-                    {hedge['symbol']} - {hedge['name']}
-                </div>
-                <div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.25rem;">
-                    {hedge['description']}
-                </div>
-                <div style="font-size: 0.75rem; color: {hedge['color']}; font-weight: 500;">
-                    💡 {hedge['expected_impact']}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)  # Spacer
-            if st.button("Add", key=f"add_hedge_{hedge['symbol']}", use_container_width=True):
-                # Add hedge to portfolio with 10% allocation
-                hedge_weight = 0.10
-                scale_factor = 1 - hedge_weight
+        if confirmed:
+            # User confirmed - add the hedge
+            hedge_weight = 0.10
+            scale_factor = 1 - hedge_weight
+            
+            if symbols and weights:
+                new_symbols = symbols + [active_preview['symbol']]
+                new_weights = [w * scale_factor for w in weights] + [hedge_weight]
                 
-                if symbols and weights:
-                    new_symbols = symbols + [hedge['symbol']]
-                    new_weights = [w * scale_factor for w in weights] + [hedge_weight]
-                else:
-                    new_symbols = [hedge['symbol']]
-                    new_weights = [1.0]
+                set_portfolio(new_symbols, new_weights)
                 
-                st.session_state.portfolio = {
-                    'symbols': new_symbols,
-                    'weights': new_weights
-                }
-                
-                st.success(f"✓ Added {hedge['symbol']} (10% allocation)")
+                st.success(f"✓ Added {active_preview['symbol']} ({hedge_weight*100:.0f}% allocation)")
                 st.balloons()
                 time.sleep(1.5)
                 st.rerun()
+    
+    else:
+        # Show hedge cards with "Preview" buttons
+        for hedge in quick_hedges:
+            col1, col2 = st.columns([5, 1])
+            
+            with col1:
+                st.markdown(f"""
+                <div style="background: white; border-radius: 12px; padding: 1rem; margin: 0.5rem 0; 
+                            box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-left: 4px solid {hedge['color']};">
+                    <div style="font-weight: 600; color: #111827; margin-bottom: 0.25rem;">
+                        {hedge['symbol']} - {hedge['name']}
+                    </div>
+                    <div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.25rem;">
+                        {hedge['description']}
+                    </div>
+                    <div style="font-size: 0.75rem; color: {hedge['color']}; font-weight: 500;">
+                        💡 {hedge['expected_impact']}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)  # Spacer
+                if st.button("Preview", key=f"preview_hedge_{hedge['symbol']}", use_container_width=True):
+                    activate_hedge_preview(hedge['symbol'])
+                    st.rerun()
     
     # Advanced hedge analysis (expandable)
     with st.expander("🔍 Advanced Hedge Analysis"):
@@ -512,61 +673,109 @@ if data_loaded:
         """)
         
         if st.button("Run Advanced Analysis", use_container_width=True, type="primary", key="advanced_hedge"):
-            with st.spinner("Analyzing optimal hedges... this takes 30-40 seconds"):
-                try:
-                    from utils.api_client import get_api_client
-                    client = get_api_client()
+            # Create placeholder for progress updates
+            progress_placeholder = st.empty()
+            status_text = st.empty()
+            
+            try:
+                # Show initial status
+                status_text.info("🔍 Analyzing your portfolio...")
+                
+                # Convert to tuples for caching
+                symbols_tuple = tuple(symbols)
+                weights_tuple = tuple(weights)
+                
+                # Start analysis with progress callback
+                import time
+                start_time = time.time()
+                
+                # Show analyzing status
+                with progress_placeholder.container():
+                    st.markdown("""
+                    <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                color: white; padding: 1rem; border-radius: 12px; text-align: center;'>
+                        <div style='font-size: 1.5rem; margin-bottom: 0.5rem;'>🔍</div>
+                        <div style='font-size: 0.875rem;'>Evaluating hedge candidates...</div>
+                        <div style='font-size: 0.75rem; opacity: 0.8; margin-top: 0.5rem;'>
+                            Analyzing correlations, volatility reduction, and tail risk improvements
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Call optimized API (now with parallel evaluation)
+                hedge_response = client.analyze_hedge_opportunities(
+                    symbols_tuple,
+                    weights_tuple,
+                    period="1year",
+                    top_n=5,  # Get top 5 from the 10 evaluated
+                    timeout=30  # Reduced from 60s - should finish in 10-15s now
+                )
+                
+                elapsed_time = time.time() - start_time
+                
+                # Clear progress indicator
+                progress_placeholder.empty()
+                status_text.empty()
+                
+                if "error" in hedge_response:
+                    st.error(f"❌ {hedge_response['error']}")
+                elif hedge_response.get('status') == 'success':
+                    top_hedges = hedge_response.get('top_hedges', [])
                     
-                    # Use client method with extended timeout (hedge analysis takes ~30s)
-                    hedge_response = client.analyze_hedge_opportunities(
-                        symbols=symbols,
-                        weights=weights,
-                        period="1year",
-                        top_n=3,
-                        timeout=60  # 60 second timeout for long-running analysis
-                    )
-                    
-                    if "error" in hedge_response:
-                        st.error(hedge_response["error"])
-                    elif hedge_response.get('status') == 'success':
-                        top_hedges = hedge_response.get('top_hedges', [])
+                    if not top_hedges:
+                        st.warning("No suitable hedge candidates found for your portfolio.")
+                    else:
+                        # Show success with timing
+                        st.success(f"✅ Analysis complete in {elapsed_time:.1f}s - Found {len(top_hedges)} optimal hedges")
                         
-                        st.markdown("#### 🎯 Optimal Hedges for Your Portfolio")
+                        st.markdown("### 🎯 Optimal Hedges for Your Portfolio")
                         
                         for i, hedge in enumerate(top_hedges, 1):
+                            # Color code by score
+                            if hedge.get('score', 0) > 0.15:
+                                border_color = "#10b981"  # Green - excellent
+                                score_emoji = "🌟"
+                            elif hedge.get('score', 0) > 0.10:
+                                border_color = "#3b82f6"  # Blue - good
+                                score_emoji = "⭐"
+                            else:
+                                border_color = "#6b7280"  # Gray - okay
+                                score_emoji = "✓"
+                            
                             st.markdown(f"""
                             <div style="background: #f9fafb; border-radius: 12px; padding: 1rem; 
-                                        margin: 0.75rem 0; border-left: 4px solid #10b981;">
-                                <div style="font-weight: 600; color: #111827; margin-bottom: 0.5rem;">
-                                    {i}. {hedge['symbol']}
+                                        margin: 0.75rem 0; border-left: 4px solid {border_color};">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                    <div style="font-weight: 600; color: #111827; font-size: 1rem;">
+                                        {score_emoji} {i}. {hedge['symbol']}
+                                    </div>
+                                    <div style="background: {border_color}; color: white; padding: 0.25rem 0.75rem; 
+                                                border-radius: 12px; font-size: 0.75rem; font-weight: 600;">
+                                        Score: {hedge.get('score', 0):.3f}
+                                    </div>
                                 </div>
-                                <div style="font-size: 0.875rem; color: #6b7280;">
-                                    <strong>CVaR Reduction:</strong> {hedge.get('cvar_improvement', 0)*100:.1f}%<br/>
+                                <div style="font-size: 0.875rem; color: #6b7280; line-height: 1.6;">
+                                    <strong>Category:</strong> {hedge.get('category', 'Unknown')}<br/>
+                                    <strong>CVaR Improvement:</strong> {hedge.get('cvar_improvement', 0)*100:.1f}% better<br/>
+                                    <strong>Volatility Reduction:</strong> {hedge.get('volatility_reduction', 0)*100:.1f}%<br/>
                                     <strong>Correlation:</strong> {hedge.get('correlation', 0):.2f}
                                 </div>
                             </div>
                             """, unsafe_allow_html=True)
                             
-                            if st.button(f"Add {hedge['symbol']}", key=f"add_optimal_{hedge['symbol']}", use_container_width=True):
-                                hedge_weight = 0.10
-                                scale_factor = 1 - hedge_weight
-                                
-                                new_symbols = symbols + [hedge['symbol']]
-                                new_weights = [w * scale_factor for w in weights] + [hedge_weight]
-                                
-                                st.session_state.portfolio = {
-                                    'symbols': new_symbols,
-                                    'weights': new_weights
-                                }
-                                
-                                st.success(f"✓ Added {hedge['symbol']}")
-                                time.sleep(1)
-                                st.rerun()
-                    else:
-                        st.error("Analysis failed - check API connection")
-                
-                except Exception as e:
-                    st.error(f"Unable to run analysis: {str(e)}")
+                            # Add preview button
+                            col1, col2 = st.columns([3, 1])
+                            with col2:
+                                if st.button(f"Preview", key=f"preview_optimal_{hedge['symbol']}", use_container_width=True):
+                                    activate_hedge_preview(hedge['symbol'])
+                                    st.rerun()
+                else:
+                    st.error("❌ Analysis failed - check API connection")
+            
+            except Exception as e:
+                progress_placeholder.empty()
+                status_text.empty()
+                st.error(f"❌ Unable to run analysis: {str(e)}")
         
         st.markdown("---")
         st.markdown("""
@@ -578,9 +787,11 @@ if data_loaded:
         - Lower tail risk (CVaR) and worst-case losses
         
         **Trade-off:** Lower risk often means lower returns during bull markets.
+        
+        **⚡ New:** Analysis optimized - now completes in 10-15 seconds instead of 30-40 seconds!
         """)
     
-    # 6. OPTIONAL: Advanced Details (Collapsed by default)
+    # 7. OPTIONAL: Advanced Details (Collapsed by default)
     with st.expander("📊 Advanced Risk Details"):
         st.markdown("### Volatility Context")
         
@@ -597,16 +808,29 @@ if data_loaded:
         On the worst 5% of days, average loss is {cvar_95:.1f}% (CVaR).
         """)
         
+        # Add detailed explanations
+        show_learn_more_section("volatility")
+        
         st.markdown("---")
-        st.markdown("### Understanding VaR")
+        st.markdown("### Understanding VaR & CVaR")
         
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**VaR (95%)**")
+            st.info(tooltip_icon("var", inline=True))
+        
+        with col2:
+            st.markdown("**CVaR (Tail Risk)**")
+            st.info(tooltip_icon("cvar", inline=True))
+        
+        # Visual comparison
+        st.markdown("**The Difference:**")
         st.markdown("""
-        **Value at Risk (VaR)** tells you the maximum expected loss on a typical day.
+        - **VaR** = Your "typical bad day" (happens ~1x per month)
+        - **CVaR** = Your "disaster day" (the really bad 5%)
         
-        - **95% VaR:** 95% of days won't exceed this loss
-        - **CVaR (Tail Risk):** Average loss when things go really wrong
-        
-        Think of VaR as your "normal bad day" and CVaR as your "disaster scenario."
+        Think of VaR as your expected loss on a bad day, and CVaR as what happens when things go truly wrong.
         """)
 
 else:
@@ -618,6 +842,39 @@ else:
         st.rerun()
 
 # Bottom Navigation
+st.markdown("---")
+st.markdown("### 📚 Learn More About Risk")
+
+with st.expander("Risk Management Guide", expanded=False):
+    st.markdown("""
+    ## Understanding Portfolio Risk
+    
+    **The Three Pillars:**
+    
+    1. **Volatility Management**
+       - Lower volatility = smoother ride
+       - Target: 15-25% for balanced portfolios
+       - Action: Add bonds, defensive stocks, or low-vol ETFs
+    
+    2. **Tail Risk Protection**
+       - CVaR shows your crash exposure
+       - Target: CVaR under 4% for moderate risk
+       - Action: Use hedges like TLT, GLD, or defensive positions
+    
+    3. **Risk-Adjusted Returns**
+       - Sharpe ratio above 1.0 is good
+       - Higher Sharpe = more bang for your buck
+       - Action: Optimize portfolio or rebalance
+    
+    **Quick Actions:**
+    - High risk? → Add defensive assets
+    - High volatility? → Add bonds or low-vol stocks
+    - Low Sharpe? → Run portfolio optimization
+    
+    **Need Help?**
+    Ask the Co-pilot: "How can I reduce my portfolio risk?"
+    """)
+
 st.markdown("---")
 
 col1, col2, col3, col4 = st.columns(4)

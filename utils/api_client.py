@@ -1,13 +1,16 @@
 # utils/api_client.py
 """
 API Client for Mobile Risk Co-pilot
-Thin wrapper around your existing FastAPI backend
+Thin wrapper around your existing FastAPI backend with caching support
 """
 
 import requests
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import logging
+import streamlit as st
+import hashlib
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -49,13 +52,23 @@ class APIClient:
             logger.error(f"Request failed for {endpoint}: {e}")
             return {"error": f"Request failed: {str(e)}"}
     
-    def get_portfolio_health(self, symbols: List[str], weights: Optional[List[float]] = None) -> dict:
-        """Get overall portfolio health score"""
+    # ==================== CACHED API CALLS ====================
+    
+    @st.cache_data(ttl=300, show_spinner=False)
+    def get_portfolio_health(_self, symbols_tuple: Tuple[str, ...], weights_tuple: Optional[Tuple[float, ...]] = None) -> dict:
+        """
+        Get overall portfolio health score (cached for 5 minutes)
+        
+        Note: Uses tuples for hashability in Streamlit cache
+        """
+        symbols = list(symbols_tuple)
+        weights = list(weights_tuple) if weights_tuple else None
+        
         if not symbols:
             return {"score": 0, "status": "No portfolio data"}
         
         # Get risk analysis
-        risk_data = self._post("/analyze", {
+        risk_data = _self._post("/analyze", {
             "symbols": symbols,
             "weights": weights,
             "period": "1year",
@@ -84,42 +97,65 @@ class APIClient:
             "status": "healthy" if score >= 80 else "caution" if score >= 60 else "risk"
         }
     
-    def get_risk_analysis(self, symbols: List[str], weights: Optional[List[float]] = None, period: str = "1year") -> dict:
-        """Get comprehensive risk analysis"""
-        return self._post("/analyze", {
+    @st.cache_data(ttl=300, show_spinner=False)
+    def get_risk_analysis(_self, symbols_tuple: Tuple[str, ...], weights_tuple: Optional[Tuple[float, ...]] = None, period: str = "1year") -> dict:
+        """
+        Get comprehensive risk analysis (cached for 5 minutes)
+        
+        Note: Uses tuples for hashability in Streamlit cache
+        """
+        symbols = list(symbols_tuple)
+        weights = list(weights_tuple) if weights_tuple else None
+        
+        return _self._post("/analyze", {
             "symbols": symbols,
             "weights": weights,
             "period": period,
             "use_real_data": True
         })
     
-    def get_risk_attribution(self, symbols: List[str], weights: Optional[List[float]] = None, period: str = "1year") -> dict:
-        """Get risk attribution (systematic vs idiosyncratic)"""
-        return self._post("/risk-attribution", {
+    @st.cache_data(ttl=300, show_spinner=False)
+    def get_risk_attribution(_self, symbols_tuple: Tuple[str, ...], weights_tuple: Optional[Tuple[float, ...]] = None, period: str = "1year") -> dict:
+        """Get risk attribution (systematic vs idiosyncratic) - cached"""
+        symbols = list(symbols_tuple)
+        weights = list(weights_tuple) if weights_tuple else None
+        
+        return _self._post("/risk-attribution", {
             "symbols": symbols,
             "weights": weights,
             "period": period
         })
     
-    def optimize_portfolio(self, symbols: List[str], method: str = "max_sharpe", period: str = "1year") -> dict:
-        """Run portfolio optimization"""
-        return self._post("/optimize", {
+    @st.cache_data(ttl=600, show_spinner=False)
+    def optimize_portfolio(_self, symbols_tuple: Tuple[str, ...], method: str = "max_sharpe", period: str = "1year") -> dict:
+        """Run portfolio optimization (cached for 10 minutes)"""
+        symbols = list(symbols_tuple)
+        
+        return _self._post("/optimize", {
             "symbols": symbols,
             "method": method,
             "period": period
         })
     
-    def get_correlation_analysis(self, symbols: List[str], period: str = "1year") -> dict:
-        """Get correlation matrix and clustering"""
-        return self._post("/correlations", {
+    @st.cache_data(ttl=300, show_spinner=False)
+    def get_correlation_analysis(_self, symbols_tuple: Tuple[str, ...], period: str = "1year") -> dict:
+        """Get correlation matrix and clustering (cached for 5 minutes)"""
+        symbols = list(symbols_tuple)
+        
+        return _self._post("/correlations", {
             "symbols": symbols,
             "period": period,
             "use_real_data": True
         })
     
-    def run_stress_test(self, symbols: List[str], weights: Optional[List[float]] = None, scenarios: Optional[dict] = None) -> dict:
-        """Run stress test scenario"""
-        return self._post("/stress-test", {
+    @st.cache_data(ttl=300, show_spinner=False)
+    def run_stress_test(_self, symbols_tuple: Tuple[str, ...], weights_tuple: Optional[Tuple[float, ...]] = None, scenarios_json: Optional[str] = None) -> dict:
+        """Run stress test scenario (cached for 5 minutes)"""
+        symbols = list(symbols_tuple)
+        weights = list(weights_tuple) if weights_tuple else None
+        scenarios = json.loads(scenarios_json) if scenarios_json else None
+        
+        return _self._post("/stress-test", {
             "symbols": symbols,
             "weights": weights,
             "stress_scenarios": scenarios,
@@ -128,44 +164,38 @@ class APIClient:
         })
     
     def get_behavioral_analysis(self, symbols: List[str], conversation_history: List[dict] = None) -> dict:
-        """Get behavioral bias analysis"""
+        """Get behavioral bias analysis (not cached - conversational)"""
         return self._post("/analyze-biases", {
             "symbols": symbols,
             "conversation_history": conversation_history or []
         })
     
-    # ==================== HEDGING METHODS ====================
+    # ==================== HEDGING METHODS (Long-running, 1-hour cache) ====================
     
+    @st.cache_data(ttl=3600, show_spinner=False)
     def analyze_hedge_opportunities(
-        self, 
-        symbols: List[str], 
-        weights: Optional[List[float]] = None,
+        _self, 
+        symbols_tuple: Tuple[str, ...], 
+        weights_tuple: Optional[Tuple[float, ...]] = None,
         period: str = "1year",
         top_n: int = 5,
-        hedge_candidates: Optional[List[str]] = None,
+        hedge_candidates_tuple: Optional[Tuple[str, ...]] = None,
         timeout: int = 60
     ) -> dict:
         """
-        Analyze portfolio and find top hedging opportunities
+        Analyze portfolio and find top hedging opportunities (cached for 1 hour)
         
-        Note: This is a long-running operation that typically takes 30-40 seconds
-        as it evaluates multiple hedge candidates and calculates impact metrics.
-        
-        Args:
-            symbols: Portfolio symbols
-            weights: Portfolio weights (optional, will use equal weight if None)
-            period: Analysis period
-            top_n: Number of top hedges to return
-            hedge_candidates: Specific hedge symbols to evaluate (optional)
-            timeout: Request timeout in seconds (default 60s for long analysis)
-        
-        Returns:
-            dict with current portfolio metrics and top hedge recommendations
+        Note: This is a long-running operation that typically takes 30-40 seconds.
+        Results are cached for 1 hour since hedge recommendations don't change frequently.
         """
+        symbols = list(symbols_tuple)
+        weights = list(weights_tuple) if weights_tuple else None
+        hedge_candidates = list(hedge_candidates_tuple) if hedge_candidates_tuple else None
+        
         if weights is None:
             weights = [1.0 / len(symbols)] * len(symbols)
         
-        return self._post("/hedging/analyze-opportunities", {
+        return _self._post("/hedging/analyze-opportunities", {
             "symbols": symbols,
             "weights": weights,
             "period": period,
@@ -173,30 +203,21 @@ class APIClient:
             "hedge_candidates": hedge_candidates
         }, timeout=timeout)
     
+    @st.cache_data(ttl=3600, show_spinner=False)
     def evaluate_hedge(
-        self,
-        current_symbols: List[str],
-        current_weights: List[float],
+        _self,
+        current_symbols_tuple: Tuple[str, ...],
+        current_weights_tuple: Tuple[float, ...],
         hedge_symbol: str,
         hedge_weight: float = 0.10,
         period: str = "1year",
         timeout: int = 30
     ) -> dict:
-        """
-        Evaluate impact of adding a specific hedge to portfolio
+        """Evaluate impact of adding a specific hedge (cached for 1 hour)"""
+        current_symbols = list(current_symbols_tuple)
+        current_weights = list(current_weights_tuple)
         
-        Args:
-            current_symbols: Current portfolio symbols
-            current_weights: Current portfolio weights
-            hedge_symbol: Symbol to evaluate as hedge
-            hedge_weight: Allocation to hedge (default 10%)
-            period: Analysis period
-            timeout: Request timeout in seconds
-        
-        Returns:
-            dict with before/after metrics and improvements
-        """
-        return self._post("/hedging/evaluate-hedge", {
+        return _self._post("/hedging/evaluate-hedge", {
             "current_symbols": current_symbols,
             "current_weights": current_weights,
             "hedge_symbol": hedge_symbol,
@@ -204,32 +225,22 @@ class APIClient:
             "period": period
         }, timeout=timeout)
     
+    @st.cache_data(ttl=3600, show_spinner=False)
     def compare_hedges(
-        self,
-        current_symbols: List[str],
-        current_weights: List[float],
-        hedge_candidates: List[str],
+        _self,
+        current_symbols_tuple: Tuple[str, ...],
+        current_weights_tuple: Tuple[float, ...],
+        hedge_candidates_tuple: Tuple[str, ...],
         hedge_weight: float = 0.10,
         period: str = "1year",
         timeout: int = 60
     ) -> dict:
-        """
-        Compare multiple hedge candidates side-by-side
+        """Compare multiple hedge candidates (cached for 1 hour)"""
+        current_symbols = list(current_symbols_tuple)
+        current_weights = list(current_weights_tuple)
+        hedge_candidates = list(hedge_candidates_tuple)
         
-        Note: Long-running operation when comparing many candidates
-        
-        Args:
-            current_symbols: Current portfolio symbols
-            current_weights: Current portfolio weights
-            hedge_candidates: List of symbols to compare as hedges
-            hedge_weight: Allocation to test for each hedge
-            period: Analysis period
-            timeout: Request timeout in seconds (default 60s)
-        
-        Returns:
-            dict with comparison of all hedge candidates
-        """
-        return self._post("/hedging/compare-hedges", {
+        return _self._post("/hedging/compare-hedges", {
             "current_symbols": current_symbols,
             "current_weights": current_weights,
             "hedge_candidates": hedge_candidates,
@@ -237,30 +248,21 @@ class APIClient:
             "period": period
         }, timeout=timeout)
     
+    @st.cache_data(ttl=3600, show_spinner=False)
     def find_optimal_hedge_allocation(
-        self,
-        current_symbols: List[str],
-        current_weights: List[float],
+        _self,
+        current_symbols_tuple: Tuple[str, ...],
+        current_weights_tuple: Tuple[float, ...],
         hedge_symbol: str,
         objective: str = "min_cvar",
         period: str = "1year",
         timeout: int = 45
     ) -> dict:
-        """
-        Find optimal allocation to a hedge asset
+        """Find optimal allocation to a hedge asset (cached for 1 hour)"""
+        current_symbols = list(current_symbols_tuple)
+        current_weights = list(current_weights_tuple)
         
-        Args:
-            current_symbols: Current portfolio symbols
-            current_weights: Current portfolio weights
-            hedge_symbol: Hedge symbol to optimize
-            objective: Optimization objective ('min_cvar', 'min_volatility', 'max_sharpe')
-            period: Analysis period
-            timeout: Request timeout in seconds (default 45s for optimization)
-        
-        Returns:
-            dict with optimal allocation and metrics
-        """
-        return self._post("/hedging/optimal-allocation", {
+        return _self._post("/hedging/optimal-allocation", {
             "current_symbols": current_symbols,
             "current_weights": current_weights,
             "hedge_symbol": hedge_symbol,
@@ -268,18 +270,11 @@ class APIClient:
             "period": period
         }, timeout=timeout)
     
-    def get_hedge_candidates(self, timeout: int = 10) -> dict:
-        """
-        Get default hedge candidate universe
-        
-        Args:
-            timeout: Request timeout in seconds
-        
-        Returns:
-            dict with hedge categories and symbols
-        """
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def get_hedge_candidates(_self, timeout: int = 10) -> dict:
+        """Get default hedge candidate universe (cached for 1 hour)"""
         try:
-            url = f"{self.base_url}/hedging/default-candidates"
+            url = f"{_self.base_url}/hedging/default-candidates"
             response = requests.get(url, timeout=timeout)
             response.raise_for_status()
             return response.json()
@@ -307,21 +302,36 @@ def get_api_client() -> APIClient:
         _client = APIClient()
     return _client
 
-# Convenience functions
+def clear_all_caches():
+    """Clear all Streamlit caches - useful for manual refresh"""
+    st.cache_data.clear()
+
+# Convenience functions with proper tuple conversion
 def get_portfolio_health(symbols: List[str] = None, weights: List[float] = None) -> dict:
     """Get portfolio health score"""
     if symbols is None:
         symbols = ["AAPL", "MSFT", "GOOGL"]
-    return get_api_client().get_portfolio_health(symbols, weights)
+    
+    symbols_tuple = tuple(symbols)
+    weights_tuple = tuple(weights) if weights else None
+    
+    return get_api_client().get_portfolio_health(symbols_tuple, weights_tuple)
 
 def get_risk_analysis(symbols: List[str] = None, weights: List[float] = None) -> dict:
     """Get risk analysis"""
     if symbols is None:
         symbols = ["AAPL", "MSFT", "GOOGL"]
-    return get_api_client().get_risk_analysis(symbols, weights)
+    
+    symbols_tuple = tuple(symbols)
+    weights_tuple = tuple(weights) if weights else None
+    
+    return get_api_client().get_risk_analysis(symbols_tuple, weights_tuple)
 
 def get_correlation_analysis(symbols: List[str] = None, period: str = "1year") -> dict:
     """Get correlation analysis"""
     if symbols is None:
         symbols = ["AAPL", "MSFT", "GOOGL"]
-    return get_api_client().get_correlation_analysis(symbols, period)
+    
+    symbols_tuple = tuple(symbols)
+    
+    return get_api_client().get_correlation_analysis(symbols_tuple, period)

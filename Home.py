@@ -1,541 +1,351 @@
-# Home.py
+# Home.py - WITH EDUCATIONAL TOOLTIPS
 """
-Mobile App Home Screen - iOS-inspired design
-Portfolio overview with immediate risk visibility
+Mobile Risk Co-pilot - Home Page
+Now with: Caching, Loading Skeletons, Real Portfolio Values, Refresh Button, and Educational Tooltips
 """
 
 import streamlit as st
-import plotly.graph_objects as go
-from utils.api_client import get_api_client
+import sys
+from pathlib import Path
 
+# Add utils to path
+sys.path.append(str(Path(__file__).parent))
+
+from utils.api_client import get_api_client
+from utils.portfolio_manager import get_portfolio, initialize_portfolio
+from utils.insights_generator import generate_insights
+from utils.loading_skeletons import (
+    show_hero_card_skeleton,
+    show_risk_score_skeleton,
+    show_insight_card_skeleton,
+    show_loading_message
+)
+from utils.portfolio_value import (
+    get_portfolio_stats,
+    initialize_portfolio_investment,
+    format_currency,
+    format_percent
+)
+from utils.refresh_button import show_refresh_button, show_last_update_time, update_refresh_time
+from utils.tooltips import (
+    show_metric_with_tooltip,
+    show_learn_more_section,
+    show_contextual_tip,
+    tooltip_icon
+)
+
+# Initialize
+initialize_portfolio()
+initialize_portfolio_investment(default_amount=100000.0)  # $100K default
+
+# Page config
 st.set_page_config(
-    page_title="Portfolio Risk App",
+    page_title="Risk Co-pilot",
     page_icon="📊",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# Enhanced iOS-inspired CSS
+# Hide default Streamlit elements
 st.markdown("""
 <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Hero Portfolio Card - iOS style gradient */
-    .portfolio-hero {
-        background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-        color: white;
-        padding: 2rem 1.5rem;
-        border-radius: 24px;
-        margin-bottom: 1rem;
-        box-shadow: 0 10px 30px rgba(59, 130, 246, 0.3);
-    }
-    
-    .portfolio-label {
-        font-size: 0.875rem;
-        opacity: 0.9;
-        margin-bottom: 0.25rem;
-    }
-    
-    .portfolio-value {
-        font-size: 2.5rem;
+    .main-header {
+        font-size: 1.75rem;
         font-weight: bold;
-        margin: 0.5rem 0;
-    }
-    
-    .portfolio-change {
-        font-size: 1.125rem;
-        opacity: 0.95;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-    
-    /* Risk Score Card - iOS style */
-    .risk-hero {
-        background: linear-gradient(135deg, #ef4444 0%, #f97316 100%);
-        color: white;
-        padding: 2rem 1.5rem;
-        border-radius: 24px;
-        margin-bottom: 1rem;
-        box-shadow: 0 10px 30px rgba(239, 68, 68, 0.3);
-    }
-    
-    .risk-score-large {
-        font-size: 3rem;
-        font-weight: bold;
-        margin: 0.5rem 0;
-    }
-    
-    .risk-context {
-        background: rgba(255, 255, 255, 0.2);
-        border-radius: 12px;
-        padding: 1rem;
-        margin-top: 1rem;
-        font-size: 0.875rem;
-        backdrop-filter: blur(10px);
-    }
-    
-    /* Stress Scenario Cards - horizontal scroll */
-    .scenarios-container {
-        display: flex;
-        gap: 1rem;
-        overflow-x: auto;
-        padding: 0.5rem 0 1rem 0;
-        margin: 0 -1rem;
-        padding-left: 1rem;
-        padding-right: 1rem;
-    }
-    
-    .scenario-card {
-        background: white;
-        border-radius: 16px;
-        padding: 1.25rem;
-        min-width: 140px;
-        text-align: center;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        border-top: 3px solid var(--border-color);
-        flex-shrink: 0;
-    }
-    
-    .scenario-icon {
-        font-size: 2rem;
         margin-bottom: 0.5rem;
     }
     
-    .scenario-loss {
-        font-size: 1.75rem;
-        font-weight: bold;
-        margin-bottom: 0.25rem;
-        color: var(--text-color);
-    }
-    
-    .scenario-name {
-        font-size: 0.75rem;
-        color: #6b7280;
-        font-weight: 500;
-    }
-    
-    /* Holdings List - iOS style */
-    .holdings-container {
-        background: white;
-        border-radius: 24px;
-        padding: 1.25rem;
-        margin: 1rem 0;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    }
-    
-    .holding-row {
-        display: flex;
-        align-items: center;
-        padding: 0.75rem 0;
-        border-bottom: 1px solid #f3f4f6;
-    }
-    
-    .holding-row:last-child {
-        border-bottom: none;
-    }
-    
-    .holding-avatar {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-        display: flex;
-        align-items: center;
-        justify-content: center;
+    .hero-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 1rem;
+        padding: 2rem;
         color: white;
-        font-weight: bold;
-        font-size: 1rem;
-        margin-right: 0.75rem;
-        flex-shrink: 0;
-    }
-    
-    .holding-info {
-        flex: 1;
-    }
-    
-    .holding-symbol {
-        font-weight: 600;
-        font-size: 0.875rem;
-        color: #111827;
-    }
-    
-    .holding-weight {
-        font-size: 0.75rem;
-        color: #6b7280;
-    }
-    
-    .holding-price {
-        text-align: right;
-        margin-right: 0.5rem;
-    }
-    
-    .holding-price-value {
-        font-weight: 600;
-        font-size: 0.875rem;
-        color: #111827;
-    }
-    
-    .holding-change {
-        font-size: 0.75rem;
-        font-weight: 500;
-    }
-    
-    .change-positive { color: #10b981; }
-    .change-negative { color: #ef4444; }
-    
-    /* Quick Action Grid */
-    .action-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 0.75rem;
         margin: 1rem 0;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .metric-card {
+        background: #f8f9fa;
+        border-radius: 1rem;
+        padding: 1.5rem;
+        margin: 0.75rem 0;
+    }
+    
+    .insight-card {
+        background: white;
+        border: 1px solid #e0e2e6;
+        border-radius: 0.75rem;
+        padding: 1.25rem;
+        margin: 0.75rem 0;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     }
     
     .action-button {
-        background: white;
-        border-radius: 16px;
-        padding: 1.25rem 1rem;
-        text-align: center;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        background: #1f77b4;
+        color: white;
+        border: none;
+        padding: 0.75rem 1.5rem;
+        border-radius: 0.5rem;
+        font-weight: 500;
         cursor: pointer;
-        transition: transform 0.2s;
-    }
-    
-    .action-button:active {
-        transform: scale(0.95);
-    }
-    
-    .action-icon {
-        font-size: 1.5rem;
-        margin-bottom: 0.5rem;
-    }
-    
-    .action-label {
-        font-size: 0.75rem;
-        font-weight: 500;
-        color: #111827;
-    }
-    
-    /* Section Headers */
-    .section-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin: 1.5rem 0 0.75rem 0;
-    }
-    
-    .section-title {
-        font-size: 1.125rem;
-        font-weight: 600;
-        color: #111827;
-    }
-    
-    .section-action {
-        font-size: 0.875rem;
-        color: #3b82f6;
-        font-weight: 500;
+        width: 100%;
+        text-align: center;
+        margin: 0.5rem 0;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state
-if 'portfolio' not in st.session_state:
-    st.session_state.portfolio = {
-        'symbols': ['AAPL', 'MSFT', 'GOOGL', 'NVDA'],
-        'weights': [0.25, 0.25, 0.25, 0.25]
-    }
-
-# Get current portfolio
-symbols = st.session_state.portfolio.get('symbols', [])
-weights = st.session_state.portfolio.get('weights', [])
-
-if symbols and len(symbols) > 0:
-    # Portfolio Value Hero Card (iOS style)
-    st.markdown("""
-    <div class="portfolio-hero">
-        <div class="portfolio-label">Total Portfolio</div>
-        <div class="portfolio-value">$127,485</div>
-        <div class="portfolio-change">
-            <span>↗</span>
-            <span>+$3,247 (2.61%)</span>
-            <span style="opacity: 0.7; margin-left: auto; font-size: 0.75rem;">Today</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+# Sidebar with refresh button
+with st.sidebar:
+    st.markdown("### 🏠 Navigation")
+    st.page_link("Home.py", label="Home", icon="🏠")
+    st.page_link("pages/2_Portfolio.py", label="Portfolio", icon="💼")
+    st.page_link("pages/3_Risk.py", label="Risk Analysis", icon="⚠️")
+    st.page_link("pages/4_Copilot.py", label="Co-pilot", icon="🤖")
     
-    # Get risk data
+    st.markdown("---")
+    
+    # Refresh button
+    show_refresh_button(location="sidebar", key="home_refresh")
+    show_last_update_time()
+    
+    st.markdown("---")
+    st.caption("💡 Tip: Data is cached for faster loading")
+    
+    # NEW: Quick help guide in sidebar
+    with st.expander("❓ Metric Guide", expanded=False):
+        st.markdown("""
+        **Quick Reference:**
+        
+        - **Risk Score:** Overall portfolio health (0-100)
+        - **Portfolio Value:** Current worth of all holdings
+        - **Volatility:** How much your value swings
+        - **Sharpe Ratio:** Returns per unit of risk
+        
+        Tap any ℹ️ icon for detailed explanations.
+        """)
+
+# Main content
+st.markdown("<h1 class='main-header'>📊 Portfolio Overview</h1>", unsafe_allow_html=True)
+
+# Get portfolio
+symbols, weights = get_portfolio()
+
+if not symbols:
+    st.info("👋 Welcome! Start by adding stocks to your portfolio.")
+    
+    # NEW: Educational content for new users
+    with st.expander("📚 Learn: What is a portfolio?"):
+        st.markdown("""
+        A **portfolio** is a collection of investments (stocks, ETFs, bonds) that you own.
+        
+        **Why build a portfolio?**
+        - **Diversification:** Spread risk across multiple assets
+        - **Risk Management:** Balance growth with stability
+        - **Goal Alignment:** Match investments to your financial goals
+        
+        **Get started:**
+        1. Click "Portfolio" in the navigation
+        2. Add 5-10 different holdings
+        3. Adjust allocations based on your risk tolerance
+        
+        Need help? Use the Co-pilot to ask questions!
+        """)
+    
+    st.stop()
+
+# Create a container for dynamic content
+content_container = st.container()
+
+with content_container:
+    # Show loading skeletons first
+    hero_placeholder = st.empty()
+    risk_score_placeholder = st.empty()
+    insights_placeholder = st.empty()
+    
+    # Show skeletons
+    with hero_placeholder.container():
+        show_hero_card_skeleton()
+    
+    with risk_score_placeholder.container():
+        show_risk_score_skeleton()
+    
+    with insights_placeholder.container():
+        show_insight_card_skeleton(count=3)
+    
+    # Fetch data (cached for 5 minutes)
     try:
+        # Convert to tuples for caching
+        symbols_tuple = tuple(symbols)
+        weights_tuple = tuple(weights)
+        
         client = get_api_client()
-        risk_response = client.get_risk_analysis(symbols, weights)
         
-        if 'metrics' in risk_response:
-            vol = risk_response['metrics'].get('annualized_volatility', 0)
-            sharpe = risk_response['metrics'].get('sharpe_ratio', 0)
-            
-            # Calculate risk score (0-100)
-            # Lower volatility = higher score, adjusted for realistic ranges
-            risk_score = max(0, min(100, int((1 - min(vol, 0.5) / 0.5) * 100)))
-            
-            # Determine risk level
-            if risk_score >= 70:
-                risk_level = "Low Risk"
-                risk_color = "#10b981"
-            elif risk_score >= 40:
-                risk_level = "Moderate Risk"
-                risk_color = "#f97316"
-            else:
-                risk_level = "High Risk"
-                risk_color = "#ef4444"
-        else:
-            risk_score = 68
-            risk_level = "Moderate Risk"
-            risk_color = "#f97316"
-            vol = 0.20
-            sharpe = 1.2
-    except Exception as e:
-        risk_score = 68
-        risk_level = "Moderate Risk"
-        risk_color = "#f97316"
-        vol = 0.20
-        sharpe = 1.2
-    
-    # Risk Score Card (iOS style with circular gauge)
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.markdown(f"""
-        <div style="background: white; border-radius: 24px; padding: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-            <div style="color: #6b7280; font-size: 0.875rem; margin-bottom: 0.25rem;">Risk Score</div>
-            <div style="font-size: 2.5rem; font-weight: bold; color: {risk_color}; margin: 0.5rem 0;">
-                {risk_score}<span style="font-size: 1.25rem; opacity: 0.6;">/100</span>
-            </div>
-            <div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 1rem;">{risk_level}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        # Create circular progress ring (CSS-based, more reliable than Plotly gauge)
-        progress = risk_score
-        circumference = 2 * 3.14159 * 32
-        stroke_dashoffset = circumference - (progress / 100 * circumference)
+        # Get portfolio stats (includes real value calculation)
+        portfolio_stats = get_portfolio_stats(symbols, weights)
         
-        st.markdown(f"""
-        <div style="display: flex; justify-content: center; align-items: center; height: 120px;">
-            <svg width="80" height="80" style="transform: rotate(-90deg);">
-                <circle cx="40" cy="40" r="32" stroke="#f3f4f6" stroke-width="8" fill="none" />
-                <circle 
-                    cx="40" 
-                    cy="40" 
-                    r="32" 
-                    stroke="{risk_color}" 
-                    stroke-width="8" 
-                    fill="none"
-                    stroke-dasharray="{circumference}"
-                    stroke-dashoffset="{stroke_dashoffset}"
-                    stroke-linecap="round"
-                    style="transition: stroke-dashoffset 0.3s ease;"
-                />
-            </svg>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Quick Actions Grid (iOS style)
-    st.markdown('<div class="section-header"><div class="section-title">Quick Actions</div></div>', unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("🔥\n\n**Analyze**", use_container_width=True, key="analyze_btn"):
-            st.switch_page("pages/3_Risk.py")
-    
-    with col2:
-        if st.button("🎯\n\n**Optimize**", use_container_width=True, key="optimize_btn"):
-            st.session_state['action'] = 'optimization'
-            st.switch_page("pages/4_Copilot.py")
-    
-    with col3:
-        if st.button("➕\n\n**Add**", use_container_width=True, key="add_btn"):
-            st.switch_page("pages/2_Portfolio.py")
-    
-    # Stress Scenarios (iOS style horizontal scroll)
-    st.markdown('<div class="section-header"><div class="section-title">Stress Scenarios</div></div>', unsafe_allow_html=True)
-    
-    scenarios = [
-        {"name": "2008 Crisis", "loss": -37, "icon": "🔥", "color": "#ef4444"},
-        {"name": "COVID 2020", "loss": -34, "icon": "🌊", "color": "#f97316"},
-        {"name": "Correction", "loss": -20, "icon": "⚡", "color": "#f59e0b"},
-        {"name": "Flash Crash", "loss": -9, "icon": "💨", "color": "#84cc16"}
-    ]
-    
-    # Create horizontal scrolling cards
-    cols = st.columns(len(scenarios))
-    for idx, scenario in enumerate(scenarios):
-        with cols[idx]:
+        # Get health score (cached)
+        health_data = client.get_portfolio_health(symbols_tuple, weights_tuple)
+        
+        # Get risk analysis (cached)
+        risk_data = client.get_risk_analysis(symbols_tuple, weights_tuple, period="1year")
+        
+        # Generate insights (cached) - pass tuples for caching
+        insights = generate_insights(symbols_tuple, weights_tuple, risk_data)
+        
+        # Update refresh time
+        update_refresh_time()
+        
+        # Replace skeletons with real data
+        
+        # 1. Hero Card - Real Portfolio Value WITH TOOLTIP
+        with hero_placeholder.container():
             st.markdown(f"""
-            <div class="scenario-card" style="--border-color: {scenario['color']}; --text-color: {scenario['color']};">
-                <div class="scenario-icon">{scenario['icon']}</div>
-                <div class="scenario-loss">{scenario['loss']}%</div>
-                <div class="scenario-name">{scenario['name']}</div>
+            <div class="hero-card">
+                <div style="font-size: 0.875rem; opacity: 0.9; margin-bottom: 0.5rem;">
+                    Portfolio Value ℹ️
+                </div>
+                <div style="font-size: 2.5rem; font-weight: bold; margin-bottom: 0.5rem;">
+                    {portfolio_stats['total_value_formatted']}
+                </div>
+                <div style="font-size: 1rem; opacity: 0.9;">
+                    {portfolio_stats['gain_loss_pct_formatted']} • {portfolio_stats['gain_loss_formatted']}
+                </div>
+                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.2);">
+                    <div style="font-size: 0.875rem; opacity: 0.9;">
+                        {portfolio_stats['holdings_count']} Holdings
+                    </div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
-    
-    if st.button("See Full Risk Analysis →", use_container_width=True, type="secondary"):
-        st.switch_page("pages/3_Risk.py")
-    
-    # Holdings List (iOS style)
-    st.markdown('<div class="section-header"><div class="section-title">Holdings</div><div class="section-action">Edit</div></div>', unsafe_allow_html=True)
-    
-    # Simulate holdings data (in production, this would come from your API)
-    holdings_data = []
-    for i, (symbol, weight) in enumerate(zip(symbols, weights if weights else [1/len(symbols)]*len(symbols))):
-        # You would fetch real prices/changes from your API
-        holdings_data.append({
-            'symbol': symbol,
-            'weight': weight * 100,
-            'price': [178.23, 378.91, 139.67, 495.22][i % 4],
-            'change': [2.34, -1.12, 0.89, 4.56][i % 4]
-        })
-    
-    st.markdown('<div class="holdings-container">', unsafe_allow_html=True)
-    
-    for holding in holdings_data:
-        change_class = "change-positive" if holding['change'] >= 0 else "change-negative"
-        change_sign = "+" if holding['change'] >= 0 else ""
+            
+            # NEW: Add tooltip explanation
+            with st.expander("ℹ️ What is Portfolio Value?", expanded=False):
+                st.markdown(tooltip_icon("portfolio_value", inline=False))
         
-        col1, col2, col3, col4 = st.columns([1, 3, 2, 0.5])
+        # 2. Risk Score WITH TOOLTIP
+        with risk_score_placeholder.container():
+            score = health_data.get('score', 50)
+            status = health_data.get('status', 'Unknown')
+            
+            # Color based on score
+            if score >= 80:
+                color = "#28a745"
+                emoji = "✅"
+                scenario = "good_portfolio"
+            elif score >= 60:
+                color = "#ffc107"
+                emoji = "⚠️"
+                scenario = "low_sharpe"
+            else:
+                color = "#dc3545"
+                emoji = "🔴"
+                scenario = "high_risk"
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div style="text-align: center;">
+                        <div style="font-size: 3rem; margin-bottom: 0.5rem;">{emoji}</div>
+                        <div style="font-size: 2.5rem; font-weight: bold; color: {color}; margin-bottom: 0.5rem;">
+                            {score}
+                        </div>
+                        <div style="font-size: 1rem; color: #666; text-transform: capitalize;">
+                            Risk Score: {status}
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
+                # NEW: Learn More button
+                if st.button("ℹ️ Learn", key="risk_score_learn", use_container_width=True):
+                    st.session_state['show_risk_score_help'] = True
+            
+            # NEW: Show contextual help
+            if st.session_state.get('show_risk_score_help', False):
+                show_learn_more_section("risk_score", expanded=True)
+                show_contextual_tip(scenario)
+                if st.button("Close", key="close_risk_help"):
+                    st.session_state['show_risk_score_help'] = False
+                    st.rerun()
+        
+        # 3. Key Insights
+        with insights_placeholder.container():
+            st.markdown("### 💡 Key Insights")
+            
+            if insights and len(insights) > 0:
+                for insight in insights[:3]:  # Top 3 insights
+                    st.markdown(f"""
+                    <div class="insight-card">
+                        <div style="font-weight: 600; color: #1f77b4; margin-bottom: 0.5rem;">
+                            {insight.get('emoji', '💡')} {insight.get('title', 'Insight')}
+                        </div>
+                        <div style="color: #666; font-size: 0.9rem;">
+                            {insight.get('description', '')}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info("No insights available yet. Check back after market analysis.")
+        
+        # Quick Actions
+        st.markdown("### 🎯 Quick Actions")
+        
+        col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.markdown(f"""
-            <div class="holding-avatar">{holding['symbol'][0]}</div>
-            """, unsafe_allow_html=True)
+            if st.button("💼 Edit Portfolio", use_container_width=True):
+                st.switch_page("pages/2_Portfolio.py")
         
         with col2:
-            st.markdown(f"""
-            <div class="holding-info">
-                <div class="holding-symbol">{holding['symbol']}</div>
-                <div class="holding-weight">{holding['weight']:.1f}%</div>
-            </div>
-            """, unsafe_allow_html=True)
+            if st.button("📊 View Risk", use_container_width=True):
+                st.switch_page("pages/3_Risk.py")
         
         with col3:
-            st.markdown(f"""
-            <div class="holding-price">
-                <div class="holding-price-value">${holding['price']:.2f}</div>
-                <div class="holding-change {change_class}">{change_sign}{holding['change']:.2f}%</div>
-            </div>
-            """, unsafe_allow_html=True)
+            if st.button("🤖 Ask Co-pilot", use_container_width=True):
+                st.switch_page("pages/4_Copilot.py")
         
-        with col4:
-            st.markdown("›", unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    if st.button("View Full Portfolio →", use_container_width=True, type="secondary"):
-        st.switch_page("pages/2_Portfolio.py")
+        # Holdings Summary
+        with st.expander("📋 Holdings Details", expanded=False):
+            for holding in portfolio_stats['holdings']:
+                col1, col2, col3 = st.columns([2, 1, 1])
+                
+                with col1:
+                    st.write(f"**{holding['symbol']}**")
+                
+                with col2:
+                    st.write(f"{holding['weight']*100:.1f}%")
+                
+                with col3:
+                    st.write(format_currency(holding['current_value']))
+            
+            st.markdown("---")
+            if st.button("✏️ Edit Portfolio", key="edit_from_holdings", use_container_width=True):
+                st.switch_page("pages/2_Portfolio.py")
+        
+    except Exception as e:
+        # Clear skeletons and show error
+        hero_placeholder.empty()
+        risk_score_placeholder.empty()
+        insights_placeholder.empty()
+        
+        st.error(f"⚠️ Error loading data: {str(e)}")
+        st.info("Try refreshing using the button in the sidebar.")
+        
+        # Show basic info even on error
+        if symbols:
+            st.write(f"**Portfolio:** {', '.join(symbols)}")
 
-else:
-    # Empty state with example portfolios
-    st.markdown("""
-    <div class="portfolio-hero">
-        <div class="portfolio-value" style="font-size: 2rem;">👋 Welcome</div>
-        <div style="margin-top: 1rem; opacity: 0.9;">Get started by creating your portfolio</div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("### Try an Example Portfolio")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        <div style="background: white; border-radius: 16px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-            <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📊</div>
-            <div style="font-weight: 600; margin-bottom: 0.25rem;">Balanced</div>
-            <div style="font-size: 0.75rem; color: #6b7280;">60% Stocks, 40% Bonds</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button("Load Balanced", use_container_width=True, key="balanced"):
-            st.session_state.portfolio = {
-                'symbols': ['VTI', 'BND', 'VEA', 'GLD'],
-                'weights': [0.40, 0.30, 0.20, 0.10]
-            }
-            st.rerun()
-    
-    with col2:
-        st.markdown("""
-        <div style="background: white; border-radius: 16px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-            <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">💻</div>
-            <div style="font-weight: 600; margin-bottom: 0.25rem;">Tech Focus</div>
-            <div style="font-size: 0.75rem; color: #6b7280;">Big Tech Giants</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button("Load Tech", use_container_width=True, key="tech"):
-            st.session_state.portfolio = {
-                'symbols': ['AAPL', 'MSFT', 'GOOGL', 'NVDA'],
-                'weights': [0.25, 0.25, 0.25, 0.25]
-            }
-            st.rerun()
-    
-    col3, col4 = st.columns(2)
-    
-    with col3:
-        st.markdown("""
-        <div style="background: white; border-radius: 16px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-            <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🚀</div>
-            <div style="font-weight: 600; margin-bottom: 0.25rem;">Growth</div>
-            <div style="font-size: 0.75rem; color: #6b7280;">High-growth stocks</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button("Load Growth", use_container_width=True, key="growth"):
-            st.session_state.portfolio = {
-                'symbols': ['TSLA', 'NVDA', 'SHOP', 'SQ'],
-                'weights': [0.30, 0.30, 0.20, 0.20]
-            }
-            st.rerun()
-    
-    with col4:
-        st.markdown("""
-        <div style="background: white; border-radius: 16px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-            <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🛡️</div>
-            <div style="font-weight: 600; margin-bottom: 0.25rem;">Defensive</div>
-            <div style="font-size: 0.75rem; color: #6b7280;">Low volatility</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button("Load Defensive", use_container_width=True, key="defensive"):
-            st.session_state.portfolio = {
-                'symbols': ['KO', 'PG', 'JNJ', 'VZ'],
-                'weights': [0.25, 0.25, 0.25, 0.25]
-            }
-            st.rerun()
-
+# Footer
 st.markdown("---")
-
-# Bottom Tab Bar (iOS style)
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.markdown("""
-    <div style="text-align: center; color: #3b82f6;">
-        <div style="font-size: 1.5rem;">🏠</div>
-        <div style="font-size: 0.625rem; font-weight: 500; margin-top: 0.25rem;">Home</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col2:
-    if st.button("💼\n\nPortfolio", use_container_width=True, key="tab_portfolio"):
-        st.switch_page("pages/2_Portfolio.py")
-
-with col3:
-    if st.button("🔥\n\nRisk", use_container_width=True, key="tab_risk"):
-        st.switch_page("pages/3_Risk.py")
-
-with col4:
-    if st.button("🤖\n\nAsk", use_container_width=True, key="tab_copilot"):
-        st.switch_page("pages/4_Copilot.py")
+st.caption("💡 **Tip**: Use the refresh button in the sidebar to update with the latest market data.")
+st.caption("📊 Data is cached for 5 minutes for faster performance.")
+st.caption("❓ Tap any ℹ️ icon to learn about metrics.")

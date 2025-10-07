@@ -6,6 +6,7 @@ Button-based interaction with contextual insights
 
 import streamlit as st
 from utils.api_client import get_api_client
+from utils.portfolio_manager import get_portfolio  # ADDED
 from utils.agent import process_query
 import time
 
@@ -137,15 +138,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Get portfolio from session state
-if 'portfolio' in st.session_state:
-    symbols = st.session_state.portfolio.get('symbols', [])
-    weights = st.session_state.portfolio.get('weights', [])
-    portfolio_loaded = True
-else:
-    symbols = []
-    weights = []
-    portfolio_loaded = False
+# Get portfolio from session state using portfolio_manager
+symbols, weights = get_portfolio()  # FIXED
+portfolio_loaded = bool(symbols)
 
 if not portfolio_loaded:
     st.markdown("""
@@ -219,7 +214,11 @@ st.markdown('<div class="section-header">📊 Key Insights</div>', unsafe_allow_
 # Load portfolio risk data for contextual insights
 try:
     client = get_api_client()
-    risk_response = client.get_risk_analysis(symbols, weights)
+    
+    # Convert to tuples for caching
+    symbols_tuple = tuple(symbols)
+    weights_tuple = tuple(weights)
+    risk_response = client.get_risk_analysis(symbols_tuple, weights_tuple)  # FIXED
     
     if 'metrics' in risk_response:
         metrics = risk_response['metrics']
