@@ -18,6 +18,3 @@ st.write(f"API URL from secrets: {api_url}")
 # Test navigation
 st.markdown("### Navigation Test")
 st.page_link("Home.py", label="🏠 Home")
-st.page_link("pages/2_Portfolio.py", label="💼 Portfolio")
-st.page_link("pages/3_Risk.py", label="🔥 Risk")
-st.page_link("pages/4_Copilot.py", label="🤖 Ask")
