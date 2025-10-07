@@ -183,22 +183,32 @@ with content_container:
         symbols_tuple = tuple(symbols)
         weights_tuple = tuple(weights)
         
-        client = get_api_client()
+        # Set shorter timeout for startup
+        import socket
+        old_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(10)  # 10 second timeout
         
-        # Get portfolio stats (includes real value calculation)
-        portfolio_stats = get_portfolio_stats(symbols, weights)
-        
-        # Get health score (cached)
-        health_data = client.get_portfolio_health(symbols_tuple, weights_tuple)
-        
-        # Get risk analysis (cached)
-        risk_data = client.get_risk_analysis(symbols_tuple, weights_tuple, period="1year")
-        
-        # Generate insights (cached) - pass tuples for caching
-        insights = generate_insights(symbols_tuple, weights_tuple, risk_data)
-        
-        # Update refresh time
-        update_refresh_time()
+        try:
+            client = get_api_client()
+            
+            # Get portfolio stats (includes real value calculation)
+            portfolio_stats = get_portfolio_stats(symbols, weights)
+            
+            # Get health score (cached)
+            health_data = client.get_portfolio_health(symbols_tuple, weights_tuple)
+            
+            # Get risk analysis (cached)
+            risk_data = client.get_risk_analysis(symbols_tuple, weights_tuple, period="1year")
+            
+            # Generate insights (cached) - pass tuples for caching
+            insights = generate_insights(symbols_tuple, weights_tuple, risk_data)
+            
+            # Update refresh time
+            update_refresh_time()
+            
+        finally:
+            # Restore original timeout
+            socket.setdefaulttimeout(old_timeout)
         
         # Replace skeletons with real data
         
