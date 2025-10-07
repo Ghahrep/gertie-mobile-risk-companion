@@ -505,19 +505,19 @@ if symbols and len(symbols) > 0:
     except Exception as e:
         st.info("💡 Add holdings to see portfolio insights")
 
-# Bottom navigation
-st.markdown("### 🎯 Quick Actions")
+# Bottom Navigation
+st.markdown("---")
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    if st.button("💼 Edit Portfolio", use_container_width=True):
-        st.switch_page("pages/2_Portfolio.py")
+    st.page_link("Home.py", label="🏠 Home", use_container_width=True)
 
 with col2:
-    if st.button("📊 View Risk", use_container_width=True):
-        st.switch_page("pages/3_Risk.py")
+    st.page_link("pages/2_Portfolio.py", label="💼 Portfolio", use_container_width=True)
 
 with col3:
-    if st.button("🤖 Ask Co-pilot", use_container_width=True):
-        st.switch_page("pages/4_Copilot.py")
+    st.page_link("pages/3_Risk.py", label="🔥 Risk", use_container_width=True)
+
+with col4:
+    st.page_link("pages/4_Copilot.py", label="🤖 Ask", use_container_width=True)

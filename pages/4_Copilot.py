@@ -382,22 +382,20 @@ with st.expander("💬 Ask a Custom Question"):
             </div>
             """, unsafe_allow_html=True)
 
+
 # Bottom Navigation
 st.markdown("---")
 
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    if st.button("🏠", use_container_width=True, help="Home"):
-        st.switch_page("Home.py")
+    st.page_link("Home.py", label="🏠 Home", use_container_width=True)
 
 with col2:
-    if st.button("💼", use_container_width=True, help="Portfolio"):
-        st.switch_page("pages/2_Portfolio.py")
+    st.page_link("pages/2_Portfolio.py", label="💼 Portfolio", use_container_width=True)
 
 with col3:
-    if st.button("🔥", use_container_width=True, help="Risk"):
-        st.switch_page("pages/3_Risk.py")
+    st.page_link("pages/3_Risk.py", label="🔥 Risk", use_container_width=True)
 
 with col4:
-    st.button("🤖", use_container_width=True, disabled=True, help="Ask")
+    st.page_link("pages/4_Copilot.py", label="🤖 Ask", use_container_width=True)

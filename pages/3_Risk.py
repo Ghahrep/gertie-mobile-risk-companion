@@ -875,21 +875,19 @@ with st.expander("Risk Management Guide", expanded=False):
     Ask the Co-pilot: "How can I reduce my portfolio risk?"
     """)
 
+# Bottom Navigation
 st.markdown("---")
 
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    if st.button("🏠", use_container_width=True, help="Home"):
-        st.switch_page("Home.py")
+    st.page_link("Home.py", label="🏠 Home", use_container_width=True)
 
 with col2:
-    if st.button("💼", use_container_width=True, help="Portfolio"):
-        st.switch_page("pages/2_Portfolio.py")
+    st.page_link("pages/2_Portfolio.py", label="💼 Portfolio", use_container_width=True)
 
 with col3:
-    st.button("🔥", use_container_width=True, disabled=True, help="Risk")
+    st.page_link("pages/3_Risk.py", label="🔥 Risk", use_container_width=True)
 
 with col4:
-    if st.button("🤖", use_container_width=True, help="Ask"):
-        st.switch_page("pages/4_Copilot.py")
+    st.page_link("pages/4_Copilot.py", label="🤖 Ask", use_container_width=True)
