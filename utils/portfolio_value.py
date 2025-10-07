@@ -11,8 +11,17 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# FMP API configuration
-FMP_API_KEY = os.getenv("FMP_API_KEY", "")
+# FMP API configuration - Read from Streamlit secrets or environment
+def get_fmp_api_key():
+    """Get FMP API key from Streamlit secrets or environment"""
+    try:
+        # Try Streamlit secrets first (for deployed app)
+        return st.secrets.get("FMP_API_KEY", "")
+    except:
+        # Fall back to environment variable (for local development)
+        return os.getenv("FMP_API_KEY", "")
+
+FMP_API_KEY = get_fmp_api_key()
 FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
 
 @st.cache_data(ttl=60, show_spinner=False)  # Cache prices for 1 minute
@@ -27,8 +36,9 @@ def get_current_prices(symbols_tuple: Tuple[str, ...]) -> Dict[str, float]:
         Dictionary mapping symbol to current price
     """
     symbols = list(symbols_tuple)
+    api_key = get_fmp_api_key()  # Get fresh key each time
     
-    if not FMP_API_KEY:
+    if not api_key:
         logger.warning("FMP_API_KEY not set, using mock prices")
         # Return mock prices for testing
         return {symbol: 100.0 + (hash(symbol) % 500) for symbol in symbols}
@@ -37,7 +47,7 @@ def get_current_prices(symbols_tuple: Tuple[str, ...]) -> Dict[str, float]:
         # Batch fetch current prices from FMP
         symbols_str = ",".join(symbols)
         url = f"{FMP_BASE_URL}/quote/{symbols_str}"
-        params = {"apikey": FMP_API_KEY}
+        params = {"apikey": api_key}
         
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
@@ -184,12 +194,14 @@ def get_price_change_24h(symbol: str) -> Optional[float]:
     Returns:
         Percentage change or None if unavailable
     """
-    if not FMP_API_KEY:
+    api_key = get_fmp_api_key()
+    
+    if not api_key:
         return None
     
     try:
         url = f"{FMP_BASE_URL}/quote/{symbol}"
-        params = {"apikey": FMP_API_KEY}
+        params = {"apikey": api_key}
         
         response = requests.get(url, params=params, timeout=5)
         response.raise_for_status()
