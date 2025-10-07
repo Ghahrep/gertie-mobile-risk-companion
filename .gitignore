@@ -65,4 +65,3 @@ logs/
 
 # Streamlit cache
 .streamlit/*
-!.streamlit/config.toml
